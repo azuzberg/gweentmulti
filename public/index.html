@@ -1,0 +1,378 @@
+<!doctype html>
+
+<html lang="ru">
+
+<head>
+	<title>Gwent Multiplayer — Гвинт вдвоём</title>
+	<meta charset="utf-8" />
+	<meta name="author" content="Arun Sundaram" />
+	<meta name="description" content="Играйте в классический Гвинт с другим игроком: создайте комнату, выберите колоду и начните партию." />
+	<meta name="keywords" content="arun, sundaram, programmer, gwent, tw3, witcher, card, game, gamedev, play" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<link rel="stylesheet" type="text/css" href="style.css" />
+	<link rel="stylesheet" type="text/css" href="multiplayer.css" />
+</head>
+
+<body data-mp-mode="lobby">
+
+<section id="mp-lobby" class="mp-lobby" aria-labelledby="mp-title">
+	<div class="mp-shell">
+		<header class="mp-header">
+			<div class="mp-faction-crests" aria-hidden="true">
+				<img src="img/icons/deck_shield_realms.png" alt="" />
+				<img src="img/icons/deck_shield_nilfgaard.png" alt="" />
+				<img src="img/icons/deck_shield_monsters.png" alt="" />
+				<img src="img/icons/deck_shield_scoiatael.png" alt="" />
+				<img src="img/icons/deck_shield_skellige.png" alt="" />
+			</div>
+			<p class="mp-eyebrow">The Witcher · Classic card game</p>
+			<h1 id="mp-title">Gwent <span>Multiplayer</span></h1>
+			<p class="mp-intro">Два игрока. Две колоды. Один победитель.</p>
+		</header>
+
+		<section id="mp-browser" aria-label="Лобби">
+			<div class="mp-profile">
+				<label for="mp-nickname">Ваше имя</label>
+				<input id="mp-nickname" type="text" maxlength="24" placeholder="Как вас зовут?" autocomplete="nickname" />
+				<span class="mp-profile-hint">Так вас увидит соперник</span>
+			</div>
+			<div class="mp-lobby-grid">
+				<div class="mp-panel mp-room-actions">
+					<div class="mp-panel-heading"><span class="mp-ornament" aria-hidden="true">◆</span><h2>Ваша партия</h2></div>
+					<form id="mp-create-form">
+						<label for="mp-room-name">Название комнаты</label>
+						<input id="mp-room-name" type="text" maxlength="40" placeholder="Например, Таверна «Белый сад»" autocomplete="off" />
+						<button id="mp-create" class="mp-button mp-button-primary" type="submit" disabled>Создать комнату</button>
+					</form>
+					<div class="mp-divider"><span>или присоединитесь</span></div>
+					<form id="mp-join-form">
+						<label for="mp-room-code">Код комнаты</label>
+						<div class="mp-code-entry">
+							<input id="mp-room-code" type="text" maxlength="6" placeholder="ABC123" autocomplete="off" autocapitalize="characters" spellcheck="false" required />
+							<button id="mp-join" class="mp-button" type="submit" disabled>Войти</button>
+						</div>
+					</form>
+					<p class="mp-note">Когда в комнате окажутся двое, у каждого будет 30 секунд на выбор колоды.</p>
+				</div>
+				<div class="mp-panel mp-rooms-panel">
+					<div class="mp-panel-heading"><span class="mp-ornament" aria-hidden="true">◆</span><h2>Открытые комнаты</h2><span id="mp-room-count" class="mp-count">0</span></div>
+					<p class="mp-panel-description">Выберите стол и бросьте вызов другому игроку.</p>
+					<ul id="mp-room-list" class="mp-room-list" aria-label="Доступные комнаты"></ul>
+					<div id="mp-empty" class="mp-empty"><img src="img/icons/deck_stats_count.png" alt="" /><p id="mp-empty-text">Подключаемся к таверне…</p><span>Комнаты появятся здесь автоматически</span></div>
+				</div>
+			</div>
+		</section>
+
+		<section id="mp-waiting" class="mp-panel mp-waiting" aria-labelledby="mp-waiting-title" hidden>
+			<p class="mp-eyebrow">Стол на двоих</p>
+			<h2 id="mp-waiting-title">Ваша комната</h2>
+			<p class="mp-waiting-description">Пригласите соперника — отправьте ему код комнаты.</p>
+			<div class="mp-share"><span id="mp-waiting-code" class="mp-room-code"></span><button id="mp-copy-code" class="mp-button mp-button-subtle" type="button">Копировать код</button></div>
+			<div id="mp-player-slots" class="mp-player-slots"></div>
+			<p class="mp-waiting-note"><span class="mp-pulse" aria-hidden="true"></span>Ожидаем второго игрока</p>
+			<button id="mp-leave-room" class="mp-button mp-button-subtle" type="button">Покинуть комнату</button>
+		</section>
+
+		<footer class="mp-footer">На основе <a href="https://github.com/asundr/gwent-classic" target="_blank" rel="noopener noreferrer">Gwent Classic</a> · Arun Sundaram <span>Фанатский проект по вселенной «Ведьмака»</span></footer>
+	</div>
+</section>
+
+<section id="mp-deck-toolbar" class="mp-deck-toolbar" aria-label="Подготовка к игре" hidden>
+	<button id="mp-leave-deck" class="mp-button mp-button-subtle" type="button">В лобби</button>
+	<div class="mp-deck-heading"><strong>Выберите колоду</strong><span id="mp-deck-ready" role="status" aria-live="polite">Ожидаем выбор игроков</span></div>
+	<div class="mp-timer"><span>До начала</span><strong id="mp-countdown" role="timer" aria-label="Осталось секунд">30</strong><span>сек.</span></div>
+</section>
+<div id="mp-connection-status" class="mp-connection-status" role="status" aria-live="polite"><span class="mp-status-dot"></span><span id="mp-connection-text">Подключение…</span></div>
+<div id="mp-feedback" class="mp-feedback" role="alert" hidden></div>
+
+<div id="dimensions" style="position:fixed;width:100vw;height:calc(100vw * 1080 / 1920);"></div>
+
+<div id="youtube"></div>
+
+<main>
+
+	<section id="click-background" class="noclick"></section>
+
+	<section id="panel-left" class="panel">
+
+		<div id="exit-game" data-title="Exit game"></div>
+	
+		<div id="leader-op" class="leader-box">
+			<div class="leader-container center" data-title="View leader"> 
+			</div>
+			<div class="leader-active">
+				<div></div>
+			</div>
+		</div>
+		
+		<section id="stats-op" class="stats">
+			<div class="profile-img">
+				<div><div></div></div>
+			</div>
+			
+			<div id="name-op" class="name">Opponent</div>
+			<div id="deck-name-op" class="deck-name"></div>
+			
+			<div id="hand-count-op" class="hand-count">6</div>
+			
+			<div id="gem1-op" class="gem gem-on bg-contain"></div>
+			<div id="gem2-op" class="gem gem-on bg-contain"></div>
+			
+			<div id="score-total-op" class="score-total"><div class="center">0</div></div>
+			
+			<div id="passed-op">Passed</div>
+			
+		</section>
+		
+		<div id="weather" class="card-container">
+		</div>
+		
+		<section id="stats-me" class="stats">
+			<div class="profile-img">
+				<div><div></div></div>
+			</div>
+			<div id="passed-me">Passed</div>
+			<div id="hand-count-me" class="hand-count">5</div>
+			
+			<div id="gem1-me" class="gem gem-on bg-contain"></div>
+			<div id="gem2-me" class="gem gem-on bg-contain"></div>
+			
+			<div id="name-me" class="name"></div>
+			<div id="deck-name-me" class="deck-name"></div>
+			
+			<div id="score-total-me" class="score-total"><div class="center">0</div></div>
+			
+			
+		</section>
+		
+		<div id="leader-me" class="leader-box">
+			<div class="leader-container center" data-title="Play leader"></div>
+			<div class="leader-active">
+				<div></div>
+			</div>
+		</div>
+		
+		<div id="pass-button" class="center" data-title="Pass round">Pass</div>
+		
+	</section>
+	
+	<section id="panel-mid" class="panel">
+		<section id="field-op" class="field">
+			<div class="field-row" data-row="siege">
+				<div class="row-score center">12</div>
+				<div class="row-special card-container"></div>
+				<div class="row-cards card-container"></div>
+				<div class="row-weather"></div>
+			</div>
+			<div class="field-row" data-row="ranged">
+				<div class="row-score center">0</div>
+				<div class="row-special card-container"></div>
+				<div class="row-cards card-container"></div>
+				<div class="row-weather"></div>
+			</div>
+			<div class="field-row" data-row="close">
+				<div class="row-score center">0</div>
+				<div class="row-special card-container"></div>
+				<div class="row-cards card-container"></div>
+				<div class="row-weather"></div>
+			</div>
+		</section>
+		
+		<section id="field-me" class="field">
+			<div class="field-row" data-row="close">
+				<div class="row-score center">0</div>
+				<div class="row-special card-container"></div>
+				<div class="row-cards card-container"></div>
+				<div class="row-weather"></div>
+			</div>
+			<div class="field-row" data-row="ranged">
+				<div class="row-score center">0</div>
+				<div class="row-special card-container"></div>
+				<div class="row-cards card-container"></div>
+				<div class="row-weather"></div>
+			</div>
+			<div class="field-row" data-row="siege">
+				<div class="row-score center">0</div>
+				<div class="row-special card-container"></div>
+				<div class="row-cards card-container"></div>
+				<div class="row-weather"></div>
+			</div>
+		</section>
+		
+		<section id="field-hand">
+			<div id="hand-row" class="card-container card-selectable">
+			</div>
+		</section>
+	</section>
+	
+	<section id="panel-right" class="panel">
+		<div id="grave-op" class="grave cardpile" data-title="View discards">
+		</div>
+		<div id="deck-op" class="cardpile">
+		
+		</div>
+		<div id="grave-me" class="grave cardpile" data-title="View discards">
+		</div>
+		<div id="deck-me" class="cardpile">
+		</div>
+	</section>
+	
+	<div id="hand-op"></div>
+	
+	<section class="card-preview hide">
+		<div class="card-lg"></div>
+		<div class="card-description">
+			<div></div>
+			<h1></h1>
+			<p></p>
+		</div>
+	</section>
+	
+	<section id="carousel" class="hide">
+		<div>
+			<div class="card-lg" onclick="Carousel.curr.shift(event,-2)" onmouseover="Carousel.curr?.nudge(-2)"></div>
+			<div class="card-lg" onclick="Carousel.curr.shift(event,-1)" onmouseover="Carousel.curr?.nudge(-1)"></div>
+			<div class="card-lg" onclick="Carousel.curr.select(event)"   onmouseover="Carousel.curr?.nudge( 0)"></div>
+			<div class="card-lg" onclick="Carousel.curr.shift(event, 1)" onmouseover="Carousel.curr?.nudge( 1)"></div>
+			<div class="card-lg" onclick="Carousel.curr.shift(event, 2)" onmouseover="Carousel.curr?.nudge( 2)"></div>
+		</div>
+		<div class="card-description">
+			<div></div>
+			<h1></h1>
+			<p></p>
+		</div>
+		<div></div>
+	</section>
+	
+	
+	<section id="popup" class="center hide">
+		<div>
+			<h3></h3>
+			<p></p>
+			<div>
+				<button onclick="Popup.curr.selectYes()"></button>
+				<button onclick="Popup.curr.selectNo()"></button>
+			</div>
+		</div>
+	</section>
+	
+	
+	<section id="notification-bar" class="hide">
+		<div></div>
+	</section>
+	
+	<section id="end-screen" class="hide">
+		<div></div>
+		<table>
+			<colgroup>
+				<col span="3" />
+				<col span="1" />
+				<col span="1" />
+				<col span="1" />
+			</colgroup>
+			<tbody>
+				<tr>
+					<th colspan="2"></th>
+					<th>Round 1</th>
+					<th>Round 2</th>
+					<th>Round 3</th>
+				</tr>
+				<tr>
+					<th colspan="2">Geralt</th>
+					<td>0</td>
+					<td>0</td>
+					<td>0</td>
+				</tr>
+				<tr>
+					<th colspan="2">Opponent</th>
+					<td>0</td>
+					<td>0</td>
+					<td>0</td>
+				</tr>
+			</tbody>
+		</table>
+		<p class="hide">The battle cannot end in a draw. You can play a rematch using the same decks or surrender.</p>
+		<button>Customize</button>
+		<button>Rematch</button>
+		<button>New Game</button>
+	</section>
+	
+	<section id="deck-selector">
+		
+	</section>
+	
+
+</main>
+
+<section id="deck-customization" class="hide" aria-label="Выбор колоды">
+	<div id="faction-title" class="center">
+		<h1></h1>
+	</div>
+	<p id="faction-description"></p>
+	
+	<label id="upload-deck" class="deck-options">
+		<input type="file" id="add-file" value="Import" style="display:none;"/>
+		Загрузить
+	</label>
+	
+	<a id="change-faction" class="deck-options" role="button" tabindex="0">Фракция</a>
+	
+	<a id="download-deck" class="deck-options" role="button" tabindex="0">Скачать</a>
+	<a id="download-json" style="display:none;"></a>
+	
+	<h2 id="card-bank-title" class="card-contianer-title">Коллекция карт</h2>
+	<h2 id="card-deck-title" class="card-contianer-title">Карты в колоде</h2>
+	<div id="card-bank" class="card-array">
+	</div>
+	<div id="card-deck" class="card-array">
+	</div>
+	<div id="card-leader">
+		<p>Лидер</p>
+		<div></div>
+	</div>
+	<div id="deck-stats">
+		<p>Всего карт</p>
+		<p>0</p>
+		<p>Карты отрядов</p>
+		<p>0</p>
+		<p>Особые карты</p>
+		<p>0/10</p>
+		<p>Общая сила</p>
+		<p>0</p>
+		<p>Герои</p>
+		<p>0</p>
+	</div>
+	<button id="start-game">Подтвердить колоду</button>
+	<p id="mp-deck-help">Не меньше 22 отрядов и не больше 10 особых карт. Если время истечёт, начнём с вашей последней допустимой колодой или стандартной.</p>
+	<div id="opponent-preview" class="center">
+		<div>
+			<p>Oponent's Deck</p>
+		</div>
+		<div class="center">
+			<button id="op-preview-open" class="hide" data-title="View opponent"></button>
+			<div id="op-preview-faction" class="hide"></div>
+			<label id="op-preview-leader" for="add-opponent" data-title="Upload opponent">
+				<input type="file" id="add-opponent" style="display:none;"/>
+				<p>Random</p>
+			</label>
+			<button id="op-preview-clear" class="hide" data-title="Clear opponent"></button>
+		</div>
+	</div>
+</section>
+
+<div data-title="Toggle music" id="toggle-music" class="center deck-menu settings-button" hidden><img src="svg/music.svg"></img></div>
+<div data-title="Toggle sound effects" id="toggle-sfx" class="center deck-menu settings-button"><img src="svg/sfx.svg"></img></div>
+<div data-title="Toggle game messages" id="toggle-notifications" class="center deck-menu settings-button"><img src="svg/notification.svg"></img></div>
+
+<script type="text/javascript" src="common.js"></script>
+<script type="text/javascript" src="cards.js"></script>
+<script type="text/javascript" src="decks.js"></script>
+<script type="text/javascript" src="abilities.js"></script>
+<script type="text/javascript" src="factions.js"></script>
+<script type="text/javascript" src="gwent.js"></script>
+<script type="text/javascript" src="game-client.js"></script>
+<script type="text/javascript" src="multiplayer.js"></script>
+</body>
+
+</html>
+
