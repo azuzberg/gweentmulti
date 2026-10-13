@@ -7,7 +7,8 @@
     "start": "node server.cjs",
     "dev": "node --watch server.cjs",
     "test": "node --test test/*.test.cjs",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "test:browser:https": "node test/run-https-browser.cjs"
   },
   "engines": { "node": ">=22.18.0" },
   "dependencies": { "jsdom": "26.1.0", "ws": "8.22.0" },

@@ -1,14 +1,31 @@
 const { test, expect } = require('@playwright/test');
 const { createServer } = require('../server.cjs');
+const { startHttpsProxy } = require('./helpers/https-proxy.cjs');
 
 async function startServer(deckDurationMs = 30_000) {
   const app = createServer({ deckDurationMs, reconnectGraceMs: 5_000 });
   await new Promise(resolve => app.server.listen(0, '127.0.0.1', resolve));
-  return { ...app, url: `http://127.0.0.1:${app.server.address().port}` };
+  const port = app.server.address().port;
+  if (process.env.GWENT_TEST_HTTPS !== '1') {
+    return { ...app, url: `http://127.0.0.1:${port}` };
+  }
+  try {
+    const proxy = await startHttpsProxy(port);
+    return {
+      ...app, url: proxy.url,
+      async close() {
+        await proxy.close();
+        await app.close();
+      },
+    };
+  } catch (error) {
+    await app.close();
+    throw error;
+  }
 }
 
 async function openPlayer(browser, url, nickname) {
-  const context = await browser.newContext();
+  const context = await browser.newContext({ ignoreHTTPSErrors: url.startsWith('https://') });
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));

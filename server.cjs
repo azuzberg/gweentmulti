@@ -21,12 +21,41 @@ function cleanName(value, fallback, limit) {
     .trim().slice(0, limit) || fallback;
 }
 
+function normalizePublicOrigin(value) {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password ||
+        url.pathname !== '/' || url.search || url.hash) throw new Error();
+    return url.origin;
+  } catch {
+    throw new Error('PUBLIC_URL должен быть адресом сайта с http:// или https://, без пути и параметров.');
+  }
+}
+
+function readIntegerSetting(name, fallback, minimum = 1, maximum = Number.MAX_SAFE_INTEGER) {
+  const value = process.env[name];
+  if (value === undefined || value === '') return fallback;
+  if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)) ||
+      Number(value) < minimum || Number(value) > maximum) {
+    throw new Error(`${name} должен быть целым числом от ${minimum} до ${maximum}.`);
+  }
+  return Number(value);
+}
+
 function createServer(options = {}) {
   const deckDurationMs = options.deckDurationMs ?? 30_000;
   const reconnectGraceMs = options.reconnectGraceMs ?? 30_000;
+  const maxRooms = options.maxRooms ?? 20;
+  const maxSessions = options.maxSessions ?? 500;
+  const publicOrigin = normalizePublicOrigin(options.publicUrl);
   if (!Number.isFinite(deckDurationMs) || deckDurationMs < 1 ||
       !Number.isFinite(reconnectGraceMs) || reconnectGraceMs < 1) {
     throw new Error('Timers must be positive finite numbers.');
+  }
+  if (!Number.isSafeInteger(maxRooms) || maxRooms < 1 ||
+      !Number.isSafeInteger(maxSessions) || maxSessions < 2) {
+    throw new Error('Room/session limits must be positive integers; at least two sessions are required.');
   }
   const publicRoot = path.join(__dirname, 'public');
   const rooms = new Map();
@@ -253,7 +282,7 @@ function createServer(options = {}) {
     switch (message.type) {
       case 'create': {
         if (room) return fail(session, 'Сначала выйдите из текущей комнаты.');
-        if (rooms.size >= (options.maxRooms ?? 100)) return fail(session, 'Все комнаты заняты. Попробуйте позже.');
+        if (rooms.size >= maxRooms) return fail(session, 'Все комнаты заняты. Попробуйте позже.');
         session.name = cleanName(message.nickname, 'Игрок', 40);
         const created = {
           code: newRoomCode(), name: cleanName(message.name, `Комната ${session.name}`, 60),
@@ -338,7 +367,12 @@ function createServer(options = {}) {
       const forwardedProtocol = request.headers['x-forwarded-proto'];
       const protocol = forwardedProtocol === 'https' || forwardedProtocol === 'http'
         ? forwardedProtocol : request.socket.encrypted ? 'https' : 'http';
-      if (request.headers.origin !== `${protocol}://${request.headers.host}`) {
+      let directOrigin;
+      try { directOrigin = new URL(`${protocol}://${request.headers.host}`).origin; }
+      catch { directOrigin = null; }
+      // Managed hosting can forward an internal Host. Its configured public URL
+      // still identifies the same game, without accepting arbitrary web origins.
+      if (request.headers.origin !== publicOrigin && request.headers.origin !== directOrigin) {
         socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
         socket.destroy();
         return;
@@ -347,7 +381,7 @@ function createServer(options = {}) {
     const token = url.searchParams.get('token');
     let session = token && sessions.get(token);
     if (!session) {
-      if (sessions.size >= (options.maxSessions ?? 1000)) {
+      if (sessions.size >= maxSessions) {
         socket.write('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n');
         socket.destroy();
         return;
@@ -432,15 +466,23 @@ function createServer(options = {}) {
 module.exports = { createServer };
 
 if (require.main === module) {
-  const app = createServer();
-  const port = Number(process.env.PORT || 3000);
+  const publicUrl = process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL ||
+    (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : undefined);
+  const app = createServer({
+    publicUrl,
+    maxRooms: readIntegerSetting('MAX_ROOMS', 20),
+    maxSessions: readIntegerSetting('MAX_SESSIONS', 500, 2),
+  });
+  const port = readIntegerSetting('PORT', 3000, 0, 65535);
   const host = process.env.HOST || '0.0.0.0';
   app.server.listen(port, host, () => {
     const address = app.server.address();
     const browserHost = address.address === '0.0.0.0' || address.address === '::'
       ? 'localhost'
       : address.address.includes(':') ? `[${address.address}]` : address.address;
-    console.log(`Гвинт: http://${browserHost}:${address.port}`);
+    const publicOrigin = normalizePublicOrigin(publicUrl);
+    console.log(`Гвинт: ${publicOrigin || `http://${browserHost}:${address.port}`}`);
+    if (publicOrigin) console.log(`Порт процесса: ${address.port}`);
   });
   for (const signal of ['SIGINT', 'SIGTERM']) {
     process.once(signal, () => app.close().then(() => process.exit(0)));

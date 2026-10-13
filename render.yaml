@@ -1,0 +1,14 @@
+# One instance is required: rooms and ongoing matches live in server memory.
+services:
+  - type: web
+    name: gweentmulti
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
