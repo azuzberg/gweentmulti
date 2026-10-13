@@ -435,7 +435,13 @@ if (require.main === module) {
   const app = createServer();
   const port = Number(process.env.PORT || 3000);
   const host = process.env.HOST || '0.0.0.0';
-  app.server.listen(port, host, () => console.log(`Гвинт: http://${host}:${port}`));
+  app.server.listen(port, host, () => {
+    const address = app.server.address();
+    const browserHost = address.address === '0.0.0.0' || address.address === '::'
+      ? 'localhost'
+      : address.address.includes(':') ? `[${address.address}]` : address.address;
+    console.log(`Гвинт: http://${browserHost}:${address.port}`);
+  });
   for (const signal of ['SIGINT', 'SIGTERM']) {
     process.once(signal, () => app.close().then(() => process.exit(0)));
   }
